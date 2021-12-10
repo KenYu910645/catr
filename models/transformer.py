@@ -50,11 +50,10 @@ class Transformer(nn.Module):
         query_embed = query_embed.repeat(1, bs, 1)
 
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
-        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask, tgt_key_padding_mask=tgt_mask,
+        hs, atten_map = self.decoder(tgt, memory, memory_key_padding_mask=mask, tgt_key_padding_mask=tgt_mask,
                           pos=pos_embed, query_pos=query_embed,
                           tgt_mask=generate_square_subsequent_mask(len(tgt)).to(tgt.device))
-
-        return hs
+        return hs, atten_map
 
 
 class TransformerEncoder(nn.Module):
@@ -98,15 +97,18 @@ class TransformerDecoder(nn.Module):
                 pos: Optional[Tensor] = None,
                 query_pos: Optional[Tensor] = None):
         output = tgt
-
+        output_atten = None
         intermediate = []
-
-        for layer in self.layers:
-            output = layer(output, memory, tgt_mask=tgt_mask,
+        
+        for i, layer in enumerate(self.layers) :
+            output_init = output.clone().detach()
+            output, atten_map = layer(output, memory, tgt_mask=tgt_mask,
                            memory_mask=memory_mask,
                            tgt_key_padding_mask=tgt_key_padding_mask,
                            memory_key_padding_mask=memory_key_padding_mask,
                            pos=pos, query_pos=query_pos)
+            if i == 5: # Last layer of multihead attention
+                output_atten = atten_map
             if self.return_intermediate:
                 intermediate.append(self.norm(output))
 
@@ -119,7 +121,7 @@ class TransformerDecoder(nn.Module):
         if self.return_intermediate:
             return torch.stack(intermediate)
 
-        return output
+        return output, output_atten
 
 
 class TransformerEncoderLayer(nn.Module):
@@ -244,15 +246,15 @@ class TransformerDecoderLayer(nn.Module):
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
         tgt2 = self.norm2(tgt)
-        tgt2 = self.multihead_attn(query=self.with_pos_embed(tgt2, query_pos),
+        tgt2, att_map= self.multihead_attn(query=self.with_pos_embed(tgt2, query_pos),
                                    key=self.with_pos_embed(memory, pos),
                                    value=memory, attn_mask=memory_mask,
-                                   key_padding_mask=memory_key_padding_mask)[0]
+                                   key_padding_mask=memory_key_padding_mask)
         tgt = tgt + self.dropout2(tgt2)
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
         tgt = tgt + self.dropout3(tgt2)
-        return tgt
+        return tgt, att_map
 
     def forward(self, tgt, memory,
                 tgt_mask: Optional[Tensor] = None,

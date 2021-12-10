@@ -15,6 +15,7 @@ class Caption(nn.Module):
             backbone.num_channels, hidden_dim, kernel_size=1)
         self.transformer = transformer
         self.mlp = MLP(hidden_dim, 512, vocab_size, 3)
+        
 
     def forward(self, samples, target, target_mask):
         if not isinstance(samples, NestedTensor):
@@ -22,13 +23,12 @@ class Caption(nn.Module):
 
         features, pos = self.backbone(samples)
         src, mask = features[-1].decompose()
-
         assert mask is not None
 
-        hs = self.transformer(self.input_proj(src), mask,
+        hs, atten_map = self.transformer(self.input_proj(src), mask,
                               pos[-1], target, target_mask)
         out = self.mlp(hs.permute(1, 0, 2))
-        return out
+        return out, atten_map
 
 
 class MLP(nn.Module):
