@@ -1,10 +1,8 @@
 import torch
-
 from transformers import BertTokenizer
 from PIL import Image
 import argparse
 import matplotlib.pyplot as plt
-
 from models import caption
 from datasets import coco, utils
 from configuration import Config
